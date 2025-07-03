@@ -10,7 +10,7 @@ const notoSans = Noto_Sans({
 
 export const metadata = {
   title: "MoneyMinds AI",
-  description: "AI-driven smart finance management tool ",
+  description: "AI-driven smart finance management tool",
 };
 
 export default function RootLayout({ children }) {
