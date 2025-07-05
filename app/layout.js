@@ -2,7 +2,7 @@ import { Noto_Sans } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/header";
 import { ClerkProvider } from "@clerk/nextjs";
-import { Toaster } from "@/components/ui/sonner";
+import { Toaster } from "sonner";
 
 const notoSans = Noto_Sans({
   subsets: ["latin"],
