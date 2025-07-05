@@ -1,7 +1,8 @@
 import { Noto_Sans } from "next/font/google";
 import "./globals.css";
-import Header from "@/components/header";
+import Header from "../components/header";
 import { ClerkProvider } from "@clerk/nextjs";
+import { Toaster } from "@/components/ui/sonner";
 
 const notoSans = Noto_Sans({
   subsets: ["latin"],
@@ -27,6 +28,7 @@ export default function RootLayout({ children }) {
           <Header />
 
           <main className="min-h-screen  text-black">
+            <Toaster richColors/>
             {children}
           </main>
 
