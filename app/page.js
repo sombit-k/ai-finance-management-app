@@ -1,5 +1,5 @@
 import React from "react";
-import HeroSection from "../components/hero";
+import HeroSection from "@/components/hero";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { statsData, featuresData,howItWorksData,testimonialsData } from "@/data/landing";
