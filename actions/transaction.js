@@ -6,6 +6,10 @@ import { revalidatePath } from "next/cache";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import aj from "@/lib/arcjet";
 import { request } from "@arcjet/next";
+import {
+  getGeminiModelCandidates,
+  isModelNotAvailableError,
+} from "@/lib/gemini";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
@@ -26,7 +30,7 @@ export async function createTransaction(data) {
     // Check rate limit
     const decision = await aj.protect(req, {
       userId,
-      requested: 1, // Specify how many tokens to consume
+      requested: 1000, // Specify how many tokens to consume
     });
 
     if (decision.isDenied()) {
@@ -230,8 +234,6 @@ export async function getUserTransactions(query = {}) {
 // Scan Receipt
 export async function scanReceipt(file) {
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
     // Convert File to ArrayBuffer
     const arrayBuffer = await file.arrayBuffer();
     // Convert ArrayBuffer to Base64
@@ -257,28 +259,67 @@ export async function scanReceipt(file) {
       If its not a recipt, return an empty object
     `;
 
-    const result = await model.generateContent([
+    const parts = [
+      { text: prompt },
       {
         inlineData: {
           data: base64String,
-          mimeType: file.type,
+          mimeType: file.type || "image/jpeg",
         },
       },
-      prompt,
-    ]);
+    ];
 
-    const response = await result.response;
-    const text = response.text();
+    let text = "";
+    let lastError = null;
+
+    for (const modelName of getGeminiModelCandidates()) {
+      try {
+        const model = genAI.getGenerativeModel({ model: modelName });
+        const result = await model.generateContent({
+          contents: [{ role: "user", parts }],
+          generationConfig: {
+            responseMimeType: "application/json",
+          },
+        });
+
+        const response = await result.response;
+        text = response.text();
+        break;
+      } catch (error) {
+        lastError = error;
+        if (!isModelNotAvailableError(error)) {
+          throw error;
+        }
+      }
+    }
+
+    if (!text) {
+      throw lastError || new Error("No response from Gemini");
+    }
+
     const cleanedText = text.replace(/```(?:json)?\n?/g, "").trim();
 
     try {
       const data = JSON.parse(cleanedText);
+      const category = typeof data.category === "string" ? data.category : "";
+      const normalizedCategory = category.toLowerCase().trim().replace(/\s+/g, "-");
+      const parsedAmount = Number(data.amount);
+      const parsedDate = data.date ? new Date(data.date) : new Date();
+
+      if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+        throw new Error("Invalid amount extracted");
+      }
+
+      if (Number.isNaN(parsedDate.getTime())) {
+        throw new Error("Invalid date extracted");
+      }
+
       return {
-        amount: parseFloat(data.amount),
-        date: new Date(data.date),
-        description: data.description,
-        category: data.category,
-        merchantName: data.merchantName,
+        amount: parsedAmount,
+        date: parsedDate,
+        description: typeof data.description === "string" ? data.description : "",
+        category: normalizedCategory || "other-expense",
+        merchantName: typeof data.merchantName === "string" ? data.merchantName : "",
       };
     } catch (parseError) {
       console.error("Error parsing JSON response:", parseError);

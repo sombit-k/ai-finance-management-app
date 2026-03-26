@@ -2,9 +2,7 @@
 
 import { db } from "@/lib/prisma";
 import { subDays } from "date-fns";
-
-const ACCOUNT_ID = "e240fccd-cf40-46a7-95a9-a4b9e9c4db09";
-const USER_ID = "280cec98-c018-41e0-85eb-1bbe7b662021";
+import { auth, currentUser } from "@clerk/nextjs/server";
 
 // Categories with their typical amount ranges
 const CATEGORIES = {
@@ -43,6 +41,52 @@ function getRandomCategory(type) {
 
 export async function seedTransactions() {
   try {
+    const { userId: clerkUserId } = await auth();
+    if (!clerkUserId) {
+      throw new Error("Unauthorized");
+    }
+
+    let user = await db.user.findUnique({
+      where: { clerkUserId },
+    });
+
+    if (!user) {
+      const clerkUser = await currentUser();
+      const email = clerkUser?.emailAddresses?.[0]?.emailAddress;
+
+      if (!clerkUser || !email) {
+        throw new Error("Unable to resolve authenticated user");
+      }
+
+      const name = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ");
+
+      user = await db.user.create({
+        data: {
+          clerkUserId,
+          email,
+          name: name || null,
+          imageUrl: clerkUser.imageUrl,
+        },
+      });
+    }
+
+    let account = await db.account.findFirst({
+      where: { userId: user.id },
+      orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+    });
+
+    if (!account) {
+      account = await db.account.create({
+        data: {
+          name: "Default Account",
+          type: "CURRENT",
+          balance: 0,
+          isDefault: true,
+          userId: user.id,
+        },
+      });
+    }
+
     // Generate 90 days of transactions
     const transactions = [];
     let totalBalance = 0;
@@ -68,8 +112,8 @@ export async function seedTransactions() {
           date,
           category,
           status: "COMPLETED",
-          userId: USER_ID,
-          accountId: ACCOUNT_ID,
+          userId: user.id,
+          accountId: account.id,
           createdAt: date,
           updatedAt: date,
         };
@@ -83,7 +127,7 @@ export async function seedTransactions() {
     await db.$transaction(async (tx) => {
       // Clear existing transactions
       await tx.transaction.deleteMany({
-        where: { accountId: ACCOUNT_ID },
+        where: { accountId: account.id, userId: user.id },
       });
 
       // Insert new transactions
@@ -93,7 +137,7 @@ export async function seedTransactions() {
 
       // Update account balance
       await tx.account.update({
-        where: { id: ACCOUNT_ID },
+        where: { id: account.id },
         data: { balance: totalBalance },
       });
     });
